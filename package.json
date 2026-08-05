@@ -1,0 +1,13 @@
+{
+  "name": "manifold-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local dev scripts for the Manifold project. Each agent under agents/ is its own separate deployable package.",
+  "type": "module",
+  "dependencies": {
+    "@google-cloud/firestore": "^7.9.0",
+    "@google-cloud/pubsub": "^4.9.0",
+    "dotenv": "^16.4.5",
+    "qrcode": "^1.5.4"
+  }
+}
