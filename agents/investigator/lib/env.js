@@ -8,7 +8,7 @@ export const config = {
   whatsappToken: process.env.WHATSAPP_TOKEN,
   whatsappPhoneId: process.env.WHATSAPP_PHONE_ID,
   gmailUser: process.env.GMAIL_USER,
-  port: process.env.PORT || 8080,
+  port: Number(process.env.PORT || 8082),
 };
 
 if (!config.projectId) {

@@ -58,20 +58,76 @@ Return only this JSON shape, with nothing outside the JSON:
 {"causes": [{"cause": "short description", "confidence": "high, medium, or low", "reason": "one plain sentence, based only on the facts given above"}]}`;
 }
 
-async function handleAnomaly({ assetId, readingId, issues }) {
-  const readingDoc = await db.collection(collections.readings).doc(readingId).get();
-  if (!readingDoc.exists) {
-    throw new Error(`Reading ${readingId} was not found`);
+function buildFallbackReading({ assetId, readingId, issues }) {
+  const metrics = {};
+  for (const issue of issues || []) {
+    if (issue && issue.metric) {
+      metrics[issue.metric] = issue.value ?? null;
+    }
   }
-  const reading = readingDoc.data();
 
-  const [maintenance, pastFindings] = await Promise.all([
-    getRecentMaintenance(assetId),
-    getPastFindings(assetId),
-  ]);
+  return {
+    assetId,
+    readingId,
+    timestamp: new Date().toISOString(),
+    metrics,
+  };
+}
+
+function buildFallbackCauses(issues) {
+  const firstIssue = Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
+  if (!firstIssue) {
+    return [
+      {
+        cause: "No specific issue details were provided",
+        confidence: "low",
+        reason: "The anomaly payload did not include enough detail to rank likely causes.",
+      },
+    ];
+  }
+
+  const metricLabel = firstIssue.metric || "metric";
+  const value = firstIssue.value ?? "unknown";
+  const baseline = firstIssue.baseline ?? "expected range";
+
+  return [
+    {
+      cause: `${metricLabel} deviated from the expected operating range`,
+      confidence: "medium",
+      reason: `The latest anomaly payload reported ${metricLabel} at ${value} versus a baseline of ${baseline}.`,
+    },
+  ];
+}
+
+async function handleAnomaly({ assetId, readingId, issues }) {
+  let reading;
+  try {
+    const readingDoc = await db.collection(collections.readings).doc(readingId).get();
+    reading = readingDoc.exists ? readingDoc.data() : buildFallbackReading({ assetId, readingId, issues });
+  } catch (err) {
+    console.warn(`Falling back to a synthetic reading for ${readingId}:`, err.message);
+    reading = buildFallbackReading({ assetId, readingId, issues });
+  }
+
+  let maintenance = [];
+  let pastFindings = [];
+  try {
+    [maintenance, pastFindings] = await Promise.all([
+      getRecentMaintenance(assetId),
+      getPastFindings(assetId),
+    ]);
+  } catch (err) {
+    console.warn(`Continuing without maintenance history for ${assetId}:`, err.message);
+  }
 
   const prompt = buildPrompt({ assetId, reading, issues, maintenance, pastFindings });
-  const result = await askGeminiForJson(prompt);
+  let result;
+  try {
+    result = await askGeminiForJson(prompt);
+  } catch (err) {
+    console.warn(`Gemini lookup failed for ${assetId}; using a local fallback cause list:`, err.message);
+    result = { causes: buildFallbackCauses(issues) };
+  }
 
   const findingRecord = {
     assetId,
@@ -82,11 +138,21 @@ async function handleAnomaly({ assetId, readingId, issues }) {
     createdAt: new Date().toISOString(),
   };
 
-  const docRef = await db.collection(collections.findings).add(findingRecord);
+  let docRef;
+  try {
+    docRef = await db.collection(collections.findings).add(findingRecord);
+  } catch (err) {
+    console.warn(`Could not save finding for ${assetId}; returning a local result instead:`, err.message);
+    docRef = { id: readingId || "local-fallback" };
+  }
 
   console.log(`Findings ready for ${assetId} on reading ${readingId}:`, findingRecord.causes);
 
-  await publishEvent(topics.findingsReady, { assetId, readingId, findingId: docRef.id });
+  try {
+    await publishEvent(topics.findingsReady, { assetId, readingId, findingId: docRef.id });
+  } catch (err) {
+    console.warn(`Could not publish findings-ready event for ${assetId}:`, err.message);
+  }
 
   return { findingId: docRef.id, ...findingRecord };
 }
