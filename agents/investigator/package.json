@@ -1,0 +1,18 @@
+{
+  "name": "manifold-investigator",
+  "version": "1.0.0",
+  "description": "Manifold Root Cause Investigation Agent. Looks through maintenance history and asks Gemini for the most likely cause.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.9.0",
+    "@google-cloud/pubsub": "^4.9.0",
+    "@google/genai": "^0.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}
