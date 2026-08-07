@@ -11,4 +11,5 @@ export const collections = {
   maintenance: "maintenance_records",
   findings: "findings",
   assets: "assets",
+  reports: "reports",
 };
